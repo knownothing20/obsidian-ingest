@@ -50,7 +50,7 @@ if ([string]::IsNullOrWhiteSpace($Message)) {
 }
 
 git commit -m $Message
-git push origin master 2>&1 | ForEach-Object { $_ }
+git push origin main 2>&1 | ForEach-Object { $_ }
 
 Write-Host ""
 Write-Host "✅ 已同步并推送到 GitHub" -ForegroundColor Green
