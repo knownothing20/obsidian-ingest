@@ -1,0 +1,78 @@
+# obsidian-ingest 配置模板
+# 实际配置放在 local/config.yaml（gitignore，不会被提交）
+# 复制方法: cp config.yaml.example local/config.yaml
+
+# ── MinerU Token ──────────────────────────────────────────────────
+# 获取 Token: https://mineru.net 注册后在 API 管理页面获取
+tokens:
+  - token: "YOUR_MINERU_TOKEN_1"
+    expires: "2026-12-31T23:59:59+08:00"
+  # 可以配置多个 Token 做轮换，提高并发处理能力
+  # - token: "YOUR_MINERU_TOKEN_2"
+  #   expires: "2026-12-31T23:59:59+08:00"
+
+# ── 转换引擎 ──────────────────────────────────────────────────────
+engine:
+  provider: mineru
+  mineru:
+    base_url: "https://mineru.net"
+    verify_ssl: false
+    timeout: 300
+    poll_interval: 3
+    max_poll_interval: 30
+
+# ── 并行 ──────────────────────────────────────────────────────────
+parallel:
+  enabled: true
+    max_workers: 4
+
+# ── Vault 路径 ────────────────────────────────────────────────────
+vault:
+  root: "/path/to/your/vault"  # 改成你的 Obsidian vault 路径
+  raw_dir: "raw/todo"
+  wiki_dir: "wiki"
+  assets_dir: "assets"
+  schema: "SCHEMA.md"
+
+# ── 目录（相对于 vault.root）──────────────────────────────────────
+dirs:
+  source: "raw/学习资料"      # 源文件目录
+  output: "raw/学习资料"      # 输出目录（通常和 source 相同）
+  archive: "raw/09-archive"   # 已处理文件归档目录
+  failed: ""                  # 失败文件目录（空=不移动）
+
+# ── 编译 ──────────────────────────────────────────────────────────
+compile:
+  mode: light                 # light=轻量编译 | llm=使用 LLM 生成摘要
+
+  llm:
+    provider: openai
+    model: gpt-4o-mini
+    api_key: ""               # 如果 mode=llm，填入 OpenAI API Key
+    base_url: ""
+
+  frontmatter:
+    type: source
+    validity: current
+    tags_from_path: true
+
+  dedup:
+    enabled: true
+    file_fingerprint: true
+    content_hash: true
+    semantic: false
+
+  archive:
+    retention_days: 7
+    auto_delete: true
+
+# ── 监听 ──────────────────────────────────────────────────────────
+watcher:
+  poll_interval: 10
+  stability_checks: 3
+  stability_interval: 2
+
+# ── 自动化 ────────────────────────────────────────────────────────
+automation:
+  auto_migrate: true
+  auto_compile: true
