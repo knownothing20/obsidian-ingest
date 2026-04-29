@@ -150,6 +150,10 @@ tokens:
 - 死信队列（永久失败的任务标记为 `skipped`）
 - 心跳检测（处理超时自动重置）
 
+## 🗺️ 路线图
+
+版本规划请参阅 [ROADMAP.md](ROADMAP.md)。
+
 ## 🤝 贡献
 
 欢迎 Issue 和 PR！请参阅 [CONTRIBUTING.md](CONTRIBUTING.md)。

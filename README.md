@@ -150,6 +150,10 @@ File processing uses a JSON-backed persistent queue:
 - Dead-letter queue (permanently failed tasks marked as `skipped`)
 - Heartbeat detection (stuck tasks auto-reset)
 
+## 🗺️ Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for version milestones and future plans.
+
 ## 🤝 Contributing
 
 Issues and PRs welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
