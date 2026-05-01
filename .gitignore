@@ -19,3 +19,7 @@ venv/
 *~
 .DS_Store
 Thumbs.db
+
+# Local sync tools (not for GitHub)
+SYNC.md
+sync-to-github.ps1
