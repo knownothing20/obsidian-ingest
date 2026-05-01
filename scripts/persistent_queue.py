@@ -116,15 +116,32 @@ class PersistentQueue:
 
     # ── 扫描 & 注册 ──
 
-    def scan_and_register(self, source_dir: str, recursive: bool = True) -> int:
-        """扫描目录，注册新文件到队列，返回新增数量"""
+    def scan_and_register(self, source_dir: str, recursive: bool = True,
+                           exclude_dirs: Optional[list[str]] = None) -> int:
+        """
+        扫描目录，注册新文件到队列，返回新增数量
+        
+        Args:
+            source_dir: 源目录
+            recursive: 是否递归
+            exclude_dirs: 排除的目录列表（Bug#3 fix）
+        """
         exts = set(_EXT_MAP.keys())
         new_count = 0
+        
+        # 标准化排除目录
+        exclude_set = set()
+        if exclude_dirs:
+            for d in exclude_dirs:
+                d = d.strip("/\\").replace("\\", "/").lower()
+                if d:
+                    exclude_set.add(d)
 
         files_to_scan = []
         if recursive:
             for root, dirs, files in os.walk(source_dir):
-                dirs[:] = [d for d in dirs if d.lower() != "images"]
+                # 过滤排除目录
+                dirs[:] = [d for d in dirs if d.lower() not in exclude_set and d.lower() != "images"]
                 for fname in files:
                     ext = os.path.splitext(fname)[1].lower()
                     if ext in exts:

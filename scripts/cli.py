@@ -58,16 +58,20 @@ def cmd_init(args):
         print("❌ 未指定 vault 路径")
         return
 
+    # Bug#5 fix: 使用正确的目录结构
     dirs = [
-        "raw/todo",
-        "raw/09-archive",
-        "wiki/sources",
-        "wiki/concepts",
-        "wiki/entities",
-        "wiki/syntheses",
-        "wiki/logs",
-        "assets",
-        "notes",
+        "raw",                    # 源文件目录
+        "todo",                   # MD 输出目录
+        "archive/raw-archive",    # 源文件归档
+        "archive/md-archive",     # MD 文件归档
+        "archive/raw-archive/failed",  # 转换失败的文件
+        "wiki/sources",           # wiki 来源页面
+        "wiki/concepts",          # wiki 概念页面
+        "wiki/entities",          # wiki 实体页面
+        "wiki/syntheses",         # wiki 综合页面
+        "wiki/logs",              # wiki 日志页面
+        "assets",                 # 资源文件
+        "notes",                  # 笔记
     ]
 
     print(f"\n📁 初始化 Vault: {vault_root}\n")
@@ -90,7 +94,7 @@ def cmd_init(args):
 
     print(f"\n✅ 初始化完成！")
     print(f"\n下一步：")
-    print(f"  1. 把 PDF/DOCX 放入 {vault_root}/raw/todo/")
+    print(f"  1. 把 PDF/DOCX 放入 {vault_root}/raw/")
     print(f"  2. 编辑 config.yaml 填入 MinerU Token 和 vault.root")
     print(f"  3. 运行: python cli.py compile --vault \"{vault_root}\"")
 
@@ -138,10 +142,10 @@ def cmd_status(args):
             print(f"  - {f}")
 
 
-# ── 编译（主流程）──────────────────────────────────────────────────
+# ── 处理（主流程：PDF→MD→Wiki）────────────────────────────────────
 
-def cmd_compile(args):
-    """转换 + 编译"""
+def cmd_process(args):
+    """转换 + 编译（PDF→MD→Wiki 主流程）"""
     cfg = _load_cfg(args)
     vault_root = cfg["vault"]["root"]
     if not vault_root:
@@ -380,11 +384,97 @@ def cmd_compile(args):
     print(f"  ✅ 成功: {success_count}  ⏭ 跳过: {skip_count}  ❌ 失败: {fail_count}")
 
 
+# ── 编译队列（MD→wiki）────────────────────────────────────────
+
+def cmd_compile_queue(args):
+    """编译队列管理子命令"""
+    from compile_queue import CompileQueue
+    
+    vault = args.vault
+    if not vault:
+        cfg = _load_cfg(args)
+        vault = cfg.get("vault", {}).get("root", "")
+    
+    if not vault:
+        print("❌ 未指定 vault（--vault）或配置中缺少 vault.root")
+        return
+    
+    # 加载目录配置
+    cfg = _load_cfg(args)
+    dirs = cfg.get("dirs", {})
+    todo_dir = os.path.join(vault, dirs.get("todo", "todo"))
+    exclude_dirs = dirs.get("exclude", [])
+    
+    queue = CompileQueue(vault_root=vault)
+    action = args.action or "status"
+    
+    if action == "scan":
+        new = queue.scan(todo_dir, exclude_dirs=exclude_dirs)
+        print(f"✅ 扫描完成，新增 {new} 个任务")
+        print(queue.format_status())
+    
+    elif action == "status":
+        print(queue.format_status())
+    
+    elif action == "pending":
+        tasks = queue.get_pending(limit=args.limit)
+        print(f"📋 待处理任务（前 {len(tasks)} 个）：")
+        for i, t in enumerate(tasks, 1):
+            print(f"  {i}. {t}")
+    
+    elif action == "retry":
+        count = queue.retry()
+        print(f"✅ 已重置 {count} 个失败任务")
+        print(queue.format_status())
+    
+    elif action == "stats":
+        s = queue.status()
+        print(f"📊 统计：")
+        print(f"  pending:     {s['pending']}")
+        print(f"  processing:  {s['processing']}")
+        print(f"  done:        {s['done']}")
+        print(f"  failed:      {s['failed']}")
+        print(f"  skipped:     {s['skipped']}")
+        print(f"  ─────────")
+        print(f"  total:       {s['total']}")
+    
+    elif action in ("start", "done", "fail", "skip"):
+        file_path = args.file
+        if not file_path:
+            print(f"❌ 需要指定文件路径")
+            return
+        
+        # 转换为相对路径（去掉 todo/ 前缀）
+        if file_path.startswith(todo_dir):
+            rel_path = os.path.relpath(file_path, todo_dir)
+        elif file_path.startswith("todo/"):
+            rel_path = file_path[5:]  # 去掉 todo/
+        else:
+            rel_path = file_path
+        
+        if action == "start":
+            ok = queue.start(rel_path)
+            print(f"{'✅' if ok else '❌'} 标记开始: {rel_path}")
+        elif action == "done":
+            ok = queue.done(rel_path)
+            print(f"{'✅' if ok else '❌'} 标记完成: {rel_path}")
+        elif action == "fail":
+            reason = args.reason or "未知错误"
+            ok = queue.fail(rel_path, reason)
+            print(f"{'✅' if ok else '❌'} 标记失败: {rel_path} ({reason})")
+        elif action == "skip":
+            reason = args.reason or "手动跳过"
+            ok = queue.skip(rel_path, reason)
+            print(f"{'✅' if ok else '❌'} 标记跳过: {rel_path} ({reason})")
+    else:
+        print(f"❌ 未知操作: {action}")
+
+
 # ── 恢复 ──────────────────────────────────────────────────────────
 
 def cmd_resume(args):
     """恢复中断任务"""
-    cmd_compile(args)
+    cmd_process(args)
 
 
 # ── 仅转换（不编译）──────────────────────────────────────────────
@@ -465,6 +555,17 @@ def cmd_batch(args):
 
     print(queue.format_stats())
     print(f"\n  本批: ✅ {result['done']}  ⏭ {result['skipped']}  ❌ {result['failed']}")
+
+    # 联动编译队列：扫描 todo/ 注册新 MD
+    try:
+        from compile_queue import CompileQueue
+        todo_dir = resolve_vault_path(cfg, cfg.get("dirs", {}).get("output", "todo"))
+        cq = CompileQueue(vault_root=vault_root)
+        new_compile = cq.scan(todo_dir, exclude_dirs=cfg.get("dirs", {}).get("exclude", []))
+        if new_compile:
+            print(f"📝 编译队列新增 {new_compile} 个待编译任务")
+    except Exception as e:
+        print(f"⚠️ 编译队列联动失败: {e}")
 
 
 def cmd_heartbeat(args):
@@ -557,15 +658,21 @@ def cmd_convert(args):
     cfg = _load_cfg(args)
     vault_root = cfg["vault"]["root"]
     source_dir = resolve_vault_path(cfg, cfg["dirs"]["source"])
-    output_dir = resolve_vault_path(cfg, cfg["dirs"]["output"])
+    
+    # output_dir: 空 = 与源文件同目录，非空 = 解析为绝对路径
+    raw_output = cfg["dirs"]["output"]
+    output_dir = resolve_vault_path(cfg, raw_output) if raw_output else ""
 
     if not os.path.isdir(source_dir):
         print(f"❌ source 目录不存在: {source_dir}")
         return
 
+    # 获取排除目录列表
+    exclude_dirs = cfg.get("dirs", {}).get("exclude", [])
+    
     # 扫描 + 分类
     from file_queue import scan_directory, build_default_registry, FileQueue
-    items = scan_directory(source_dir, recursive=True, skip_existing_md=True)
+    items = scan_directory(source_dir, recursive=True, skip_existing_md=True, exclude_dirs=exclude_dirs)
     if not items:
         print("✅ 没有需要转换的文件")
         return
@@ -604,9 +711,10 @@ def cmd_convert(args):
             print(f"         ↳ {item.error[:80]}")
 
     # 处理
-    print(f"\n🔧 引擎: {engine.get_name()}")
+    max_workers = cfg.get("parallel", {}).get("max_workers", 1)
+    print(f"\n🔧 引擎: {engine.get_name()} | 并行数: {max_workers}")
     print(f"{'─' * 40}")
-    stats = queue.process(max_workers=1, progress_callback=on_progress)
+    stats = queue.process(max_workers=max_workers, progress_callback=on_progress)
 
     # 结果
     result = queue.export_results()
@@ -748,7 +856,7 @@ def cmd_watch(args):
                 print(f"\n📥 发现 {len(pending)} 个新文件")
                 # 委托给 compile 处理
                 args_copy = argparse.Namespace(**vars(args))
-                cmd_compile(args_copy)
+                cmd_process(args_copy)
             time.sleep(interval)
         except KeyboardInterrupt:
             break
@@ -825,9 +933,19 @@ def main():
     # status
     sub.add_parser("status", help="查看处理状态")
 
-    # compile
-    p_compile = sub.add_parser("compile", help="转换 + 编译")
-    p_compile.add_argument("--dry-run", action="store_true", help="预览不执行")
+    # process（主流程：转换 + 编译 + 归档）
+    p_process = sub.add_parser("process", help="PDF→MD→Wiki 主流程（转换 + 编译 + 归档）")
+    p_process.add_argument("--dry-run", action="store_true", help="预览不执行")
+
+    # compile（编译队列）
+    p_compile = sub.add_parser("compile", help="编译队列管理（MD→wiki）")
+    p_compile.add_argument("action", 
+                         choices=["scan", "status", "pending", "start", "done", "fail", "skip", "retry", "stats"],
+                         default="status", nargs="?", help="操作")
+    p_compile.add_argument("--vault", "-v", help="Vault 根目录")
+    p_compile.add_argument("--limit", "-l", type=int, default=50, help="pending 数量限制")
+    p_compile.add_argument("file", nargs="?", help="文件路径（用于 start/done/fail/skip）")
+    p_compile.add_argument("--reason", help="失败/跳过原因")
 
     # resume
     sub.add_parser("resume", help="恢复中断任务")
@@ -869,7 +987,8 @@ def main():
     cmds = {
         "init": cmd_init,
         "status": cmd_status,
-        "compile": cmd_compile,
+        "process": cmd_process,
+        "compile": cmd_compile_queue,
         "resume": cmd_resume,
         "convert": cmd_convert,
         "migrate": cmd_migrate,

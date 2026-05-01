@@ -25,12 +25,35 @@ def _move(src: str, dst_dir: str) -> Optional[str]:
     return dst
 
 
-def has_md_sibling(pdf_path: str) -> bool:
+def has_md_sibling(pdf_path: str, output_dir: str = "") -> bool:
+    """
+    检查是否有同名的 MD 文件
+    
+    Bug#6 fix: 需要检查两个位置：
+    1. 同目录（原始行为）
+    2. output_dir/todo（因为 MD 转换后放在 todo/）
+    
+    Args:
+        pdf_path: PDF/源文件路径
+        output_dir: 输出目录（todo/），用于检查 MD 是否已转换
+    """
     base, _ = os.path.splitext(pdf_path)
-    return os.path.exists(base + ".md")
+    
+    # 1. 检查同目录
+    if os.path.exists(base + ".md"):
+        return True
+    
+    # 2. 检查 output_dir（todo/）
+    if output_dir:
+        fname = os.path.basename(base) + ".md"
+        md_in_output = os.path.join(output_dir, fname)
+        if os.path.exists(md_in_output):
+            return True
+    
+    return False
 
 
-def get_pending_files(source_dir: str, recursive: bool = True) -> list:
+def get_pending_files(source_dir: str, recursive: bool = True, output_dir: str = "") -> list:
     """获取待处理文件列表（排除已有同名 MD 的）"""
     # 支持格式：MinerU 直接处理 + DOC/PPT 需先转为 DOCX/PPTX
     exts = {
@@ -47,14 +70,14 @@ def get_pending_files(source_dir: str, recursive: bool = True) -> list:
                 ext = os.path.splitext(fname)[1].lower()
                 if ext in exts:
                     fpath = os.path.join(root, fname)
-                    if not has_md_sibling(fpath):
+                    if not has_md_sibling(fpath, output_dir):
                         pending.append((fpath, ext))
     else:
         for fname in os.listdir(source_dir):
             ext = os.path.splitext(fname)[1].lower()
             if ext in exts:
                 fpath = os.path.join(source_dir, fname)
-                if os.path.isfile(fpath) and not has_md_sibling(fpath):
+                if os.path.isfile(fpath) and not has_md_sibling(fpath, output_dir):
                     pending.append((fpath, ext))
     return pending
 
@@ -94,7 +117,7 @@ def migrate(source_dir: str = "", output_dir: str = "", archive_dir: str = "",
 
         elif ext_lower in (".pdf", ".docx", ".pptx", ".xlsx", ".doc", ".ppt",
                             ".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp", ".gif", ".jp2"):
-            if has_md_sibling(fpath):
+            if has_md_sibling(fpath, output_dir):
                 if archive_dir:
                     try:
                         r = _move(fpath, archive_dir)

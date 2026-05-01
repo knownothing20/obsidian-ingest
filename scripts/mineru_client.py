@@ -68,15 +68,31 @@ class MinerUClient:
         self.pool_retry_wait = pool_retry_wait
         self._pool: List[TokenSlot] = [TokenSlot(t["token"], t.get("expires", "")) for t in self.cfg["tokens"]]
         self._idx = -1
+        self._active_counts = [0] * len(self._pool)  # 每个 token 的活跃请求数
 
     # ── Token 管理 ────────────────────────────────────────────────
 
     def _next_token(self) -> Optional[str]:
-        for _ in range(len(self._pool)):
-            self._idx = (self._idx + 1) % len(self._pool)
-            if self._pool[self._idx].is_available():
-                return self._pool[self._idx].token
+        """选择活跃请求最少的 token（均匀分布）"""
+        best_idx = -1
+        best_count = float('inf')
+        
+        for i, s in enumerate(self._pool):
+            if s.is_available() and self._active_counts[i] < best_count:
+                best_count = self._active_counts[i]
+                best_idx = i
+        
+        if best_idx >= 0:
+            self._active_counts[best_idx] += 1  # 增加计数
+            return self._pool[best_idx].token
         return None
+
+    def _release_token(self, token: str):
+        """释放 token（请求完成）"""
+        for i, s in enumerate(self._pool):
+            if s.token == token:
+                self._active_counts[i] = max(0, self._active_counts[i] - 1)
+                return
 
     def _mark_exhausted(self, token: str, wait: int):
         for s in self._pool:
@@ -100,8 +116,18 @@ class MinerUClient:
         tokens = []
         for i, s in enumerate(self._pool):
             remaining = max(0, int(s.cooldown_until - time.time())) if s.exhausted else 0
-            tokens.append({"index": i + 1, "available": s.is_available(), "cooling_seconds": remaining})
-        return {"tokens_count": len(self._pool), "tokens": tokens, "token_expiry": build_expiry_info(self.cfg["tokens"])}
+            tokens.append({
+                "index": i + 1, 
+                "available": s.is_available(), 
+                "cooling_seconds": remaining,
+                "active_requests": self._active_counts[i]  # 当前活跃请求数
+            })
+        return {
+            "tokens_count": len(self._pool), 
+            "tokens": tokens, 
+            "token_expiry": build_expiry_info(self.cfg["tokens"]),
+            "total_active": sum(self._active_counts)
+        }
 
     # ── HTTP 请求 ─────────────────────────────────────────────────
 
@@ -202,21 +228,25 @@ class MinerUClient:
         token = self._next_token()
         if not token:
             raise RuntimeError("所有 Token 均在冷却中")
-        result = submit_fn(token)
-        if self._should_retry(result):
-            self._mark_exhausted(token, self.token_cooldown)
-            new = self._next_token()
-            if not new:
-                raise RuntimeError("多个 Token 均触发限流")
-            result = submit_fn(new)
+        try:
+            result = submit_fn(token)
             if self._should_retry(result):
-                self._mark_exhausted(new, self.token_cooldown)
-                raise RuntimeError("所有 Token 均触发限流")
-        if result.get("code") != 0:
-            return self._enrich({"code": result.get("code", -1), "msg": result.get("msg", "未知错误"), "data": result.get("data")})
-        task_id = result["data"]["task_id"]
-        print(f"  任务已提交: {task_id}")
-        return self._poll(task_id, token)
+                self._mark_exhausted(token, self.token_cooldown)
+                new = self._next_token()
+                if not new:
+                    raise RuntimeError("多个 Token 均触发限流")
+                token = new
+                result = submit_fn(token)
+                if self._should_retry(result):
+                    self._mark_exhausted(token, self.token_cooldown)
+                    raise RuntimeError("所有 Token 均触发限流")
+            if result.get("code") != 0:
+                return self._enrich({"code": result.get("code", -1), "msg": result.get("msg", "未知错误"), "data": result.get("data")})
+            task_id = result["data"]["task_id"]
+            print(f"  任务已提交: {task_id}")
+            return self._poll(task_id, token)
+        finally:
+            self._release_token(token)  # 释放 token
 
     # ── 公开 API：Precision ──────────────────────────────────────
 

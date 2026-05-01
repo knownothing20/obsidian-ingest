@@ -1,10 +1,9 @@
-﻿# 用户私有配置
-local/
-
-# Python
 __pycache__/
 *.pyc
 *.pyo
+local/
+config.yaml
+.checkpoint.json
 *.egg-info/
 dist/
 build/
@@ -12,22 +11,11 @@ build/
 *.egg
 .venv/
 venv/
-
-# 环境
 .env
-
-# IDE
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
-
-# 系统
 .DS_Store
 Thumbs.db
-
-# 临时
-*.log
-*.tmp
-.checkpoint.json

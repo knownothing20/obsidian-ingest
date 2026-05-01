@@ -54,39 +54,50 @@ parallel:
 ### Usage
 
 ```bash
-# Check queue status
+# Initialize vault directory structure
+python scripts/cli.py init --vault "D:/MyObsidianVault"
+
+# Check queue status (auto-scans for new files)
 python scripts/cli.py queue
 
-# Scan and convert pending files
+# Scan and convert pending files (single pass)
 python scripts/cli.py convert
 
-# Compile converted MD files into wiki pages
-python scripts/cli.py compile
+# Batch convert pending files
+python scripts/cli.py batch --size 100
+
+# Full pipeline: PDF→MD→Wiki
+python scripts/cli.py process
+
+# Compile queue management (MD→wiki)
+python scripts/cli.py compile scan
+python scripts/cli.py compile status
 
 # View overall status
 python scripts/cli.py status
 
-# Run as daemon (periodic scan)
-python scripts/cli.py daemon --interval 300
+# Background daemon (scan + process + repeat)
+python scripts/cli.py heartbeat --interval 300
 
-# Mark permanently failed tasks as skipped
-python scripts/cli.py queue --skip-failed
-
-# Reset stuck tasks
-python scripts/cli.py queue --reset-stuck
+# Watch directory for new files
+python scripts/cli.py watch
 ```
 
 ## 📖 CLI Commands
 
 | Command | Description |
 |---------|-------------|
-| `queue` | View file processing queue status |
-| `convert` | Scan and convert pending files |
-| `compile` | Compile converted MD files into wiki pages |
-| `status` | View overall processing status |
-| `daemon` | Run as periodic daemon |
-| `queue --skip-failed` | Mark permanently failed tasks as skipped |
-| `queue --reset-stuck` | Reset stuck processing tasks |
+| `init` | Initialize vault directory structure |
+| `queue` | View persistent queue status (PDF→MD) |
+| `batch` | Batch process pending file conversions |
+| `convert` | Scan and convert pending files (single pass) |
+| `compile` | Compile queue management (MD→wiki, scan/status/pending/retry) |
+| `process` | Full pipeline: convert + compile + archive |
+| `status` | View overall processing status (checkpoint-based) |
+| `heartbeat` | Run as periodic daemon (scan + process + repeat) |
+| `watch` | Watch directory for new files and auto-process |
+| `migrate` | Archive processed source files |
+| `cleanup` | Clean expired archives + reset failed tasks |
 
 ## 📁 Project Structure
 
@@ -110,7 +121,6 @@ obsidian-ingest/
 │   └── migrator.py          # File migration
 ├── SKILL.md                 # AI Agent usage manual
 ├── INSTALL.md               # Installation guide
-├── CHANGELOG.md             # Version history
 └── LICENSE
 ```
 
@@ -152,11 +162,15 @@ File processing uses a JSON-backed persistent queue:
 
 ## 🗺️ Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for version milestones and future plans.
+- **Deep compilation mode** — LLM-powered article summaries and cross-document linking
+- **Obsidian parser** — Standalone module for wiki-link parsing, front matter analysis, tag extraction
+- **pip install** — Package as `pip install obsidian-ingest`
+- **Docker support** — Containerized deployment for non-Windows environments
+- **Test suite** — Unit tests and integration tests
 
 ## 🤝 Contributing
 
-Issues and PRs welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Issues and PRs welcome! Please see [GitHub Issues](https://github.com/knownothing20/obsidian-ingest/issues) for current tasks and feature requests.
 
 ## 📄 License
 

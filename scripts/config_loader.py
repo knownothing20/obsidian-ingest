@@ -1,4 +1,7 @@
-"""config_loader.py - 统一配置加载（YAML 优先，JSON 兼容旧版）"""
+"""config_loader.py - 统一配置加载（YAML 优先，JSON 兼容旧版）
+
+同时提供统一的扩展名映射和文件分类常量，供其他模块引用，避免硬编码和重复定义。
+"""
 
 import os
 import sys
@@ -8,6 +11,50 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 _TZ_CN = timezone(timedelta(hours=8))
+
+
+# ── 统一文件分类常量（唯一权威定义）────────────────────────────
+
+class FileCategory:
+    """文件大类（字符串常量，避免 enum 跨模块兼容问题）"""
+    PDF = "pdf"
+    OFFICE_MODERN = "office"       # DOCX / PPTX
+    OFFICE_LEGACY = "legacy"       # DOC / PPT
+    SPREADSHEET = "spreadsheet"    # XLSX
+    IMAGE = "image"
+    UNKNOWN = "unknown"
+
+
+# 扩展名 → 分类映射（唯一权威定义，其他模块从此导入）
+EXT_CATEGORY_MAP: dict[str, str] = {
+    ".pdf":  FileCategory.PDF,
+    ".docx": FileCategory.OFFICE_MODERN,
+    ".pptx": FileCategory.OFFICE_MODERN,
+    ".doc":  FileCategory.OFFICE_LEGACY,
+    ".ppt":  FileCategory.OFFICE_LEGACY,
+    ".xlsx": FileCategory.SPREADSHEET,
+    ".png":  FileCategory.IMAGE,
+    ".jpg":  FileCategory.IMAGE,
+    ".jpeg": FileCategory.IMAGE,
+    ".bmp":  FileCategory.IMAGE,
+    ".tiff": FileCategory.IMAGE,
+    ".tif":  FileCategory.IMAGE,
+    ".webp": FileCategory.IMAGE,
+    ".gif":  FileCategory.IMAGE,
+    ".jp2":  FileCategory.IMAGE,
+}
+
+# 所有支持的扩展名集合
+SUPPORTED_EXTENSIONS = set(EXT_CATEGORY_MAP.keys())
+
+# 源文件扩展名集合（非 MD，用于归档/迁移过滤）
+SOURCE_EXTENSIONS = SUPPORTED_EXTENSIONS
+
+
+def classify_file(path: str) -> str:
+    """根据扩展名分类文件，返回 FileCategory 字符串"""
+    ext = os.path.splitext(path)[1].lower()
+    return EXT_CATEGORY_MAP.get(ext, FileCategory.UNKNOWN)
 
 
 def _find_config() -> Path:
@@ -20,16 +67,13 @@ def _find_config() -> Path:
         return local_yaml
     if local_json.exists():
         return local_json
-    # 回退到 skill 根目录（兼容旧版）
-    yaml_path = skill_dir / "config.yaml"
-    json_path = skill_dir / "config.json"
-    if yaml_path.exists():
-        return yaml_path
-    if json_path.exists():
-        return json_path
     raise FileNotFoundError(
-        f"配置文件不存在。请复制 config.yaml.example 到 local/config.yaml 并填入你的 Token:\n"
-        f"  cp config.yaml.example local/config.yaml"
+        f"配置文件不存在。\n"
+        f"请将配置放在 local/ 目录（被 gitignore 保护，不会泄漏到 GitHub）：\n"
+        f"  mkdir -p local\n"
+        f"  cp config.yaml.example local/config.yaml\n"
+        f"\n"
+        f"填入你的 MinerU Token 后即可使用。"
     )
 
 
@@ -83,21 +127,30 @@ def load_config(config_path: Optional[str] = None) -> dict:
     vault_raw = raw.get("vault", {})
     vault = {
         "root": os.path.expandvars(os.path.expanduser(vault_raw.get("root", ""))),
-        "raw_dir": vault_raw.get("raw_dir", "raw/todo"),
+        "raw_dir": vault_raw.get("raw_dir", "raw"),
+        "todo_dir": vault_raw.get("todo_dir", "todo"),
         "wiki_dir": vault_raw.get("wiki_dir", "wiki"),
         "assets_dir": vault_raw.get("assets_dir", "assets"),
         "schema": vault_raw.get("schema", "SCHEMA.md"),
+        "state_dir": vault_raw.get("state_dir", ".obsidian-ingest"),
+        "wiki_subdirs": vault_raw.get("wiki_subdirs", ["sources", "concepts", "entities", "syntheses", "logs"]),
     }
 
     # dirs（相对于 vault.root）
     dirs_raw = raw.get("dirs", {})
     dirs = {}
-    for key in ("source", "output", "archive", "failed"):
+    for key in ("source", "output", "archive", "md_archive", "failed"):
         val = dirs_raw.get(key, "")
         if val:
             val = os.path.expandvars(os.path.expanduser(val))
             val = val.replace("\\", "/")
         dirs[key] = val
+
+    # exclude 目录列表（不扫描）
+    dirs["exclude"] = dirs_raw.get("exclude", [])
+
+    # skip_dirnames 目录名列表（扫描时跳过这些名字的子目录，如 images）
+    dirs["skip_dirnames"] = dirs_raw.get("skip_dirnames", ["images"])
 
     # compile
     compile_raw = raw.get("compile", {})
@@ -125,6 +178,12 @@ def load_config(config_path: Optional[str] = None) -> dict:
             "semantic": dedup_raw.get("semantic", False),
         },
         "archive": {
+            # 新字段：source / MD 分离归档
+            "source_retention_days": arc_raw.get("source_retention_days", arc_raw.get("retention_days", 7)),
+            "source_auto_delete": arc_raw.get("source_auto_delete", arc_raw.get("auto_delete", True)),
+            "md_retention_days": arc_raw.get("md_retention_days", -1),   # -1 = 永久保留
+            "md_auto_delete": arc_raw.get("md_auto_delete", False),
+            # 保留旧字段兼容
             "retention_days": arc_raw.get("retention_days", 7),
             "auto_delete": arc_raw.get("auto_delete", True),
         },
