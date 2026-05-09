@@ -1,4 +1,4 @@
-"""
+﻿"""
 anomaly_check.py — 编译队列和转换队列异常检测
 
 只读检查，不修改任何文件，不发送任何消息。
@@ -368,7 +368,7 @@ def main():
     parser.add_argument(
         "--vault", "-v",
         required=True,
-        help="Vault 根目录路径（例如 E:/obsidian-vault）",
+        help="Vault 根目录路径（例如 /path/to/vault）",
     )
     parser.add_argument(
         "--config", "-c",
@@ -459,3 +459,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
